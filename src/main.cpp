@@ -44,16 +44,12 @@ BMNE280: SDA = 21  SCL = 22
 */
 // variables for BME280
 bool status;
-int BME280_scanIntervall = 10000;  // in milliseconds
+int BME280_scanIntervall = 20000;  // in milliseconds
 long BME280lastScan = 0;
 float BME_Temp;
 float BME_Hum;
 float BME_Pres;
-float BME_Temperature[] = {1.1,1.1,1.1,1.1,1.1,1.1,1.1};
-float BME_Humidity[] = {1.1,1.1,1.1,1.1,1.1,1.1,1.1};
-float BME_Pressure[] = {1.1,1.1,1.1,1.1,1.1,1.1,1.1};
 long  BME_Time;
-int BME_index = 0;
 
 
 // variables for LED 
@@ -92,11 +88,11 @@ String getOutputStates(){
   myArray["cards"][3]["c_text"] = String(MQTT_INTERVAL) + "ms";
   myArray["cards"][4]["c_text"] = String(U_days) + " days " + String(U_hours) + ":" + String(U_min) + ":" + String(U_sec);
   myArray["cards"][5]["c_text"] = "WiFi = " + String(WiFi_reconnect) + "   MQTT = " + String(Mqtt_reconnect);
-  myArray["cards"][6]["c_text"] = String(BME_index);
+  myArray["cards"][6]["c_text"] = " ";
   myArray["cards"][7]["c_text"] = " to reboot click ok";
-  myArray["cards"][8]["c_text"] = String(BME_Humidity[BME_index]) +"%";
-  myArray["cards"][9]["c_text"] = String(BME_Pressure[BME_index]) ;
-  myArray["cards"][10]["c_text"] = String(BME_Temperature[BME_index]) + "Grad";
+  myArray["cards"][8]["c_text"] = String(BME_Hum) +"%";
+  myArray["cards"][9]["c_text"] = String(BME_Pres) ;
+  myArray["cards"][10]["c_text"] = String(BME_Temp) + "Grad";
   
   String jsonString = JSON.stringify(myArray);
   log_i("%s",jsonString.c_str()); 
@@ -171,18 +167,22 @@ void setup_BME280() {
   Adafruit_BME280::FILTER_OFF,
   Adafruit_BME280::STANDBY_MS_1000);
   log_i("%s\n","BME280 sensor initialized");
+
+  bme.takeForcedMeasurement();
+  BME_Temp = bme.readTemperature();
+  BME_Hum = bme.readHumidity();
+  BME_Pres = bme.readPressure() / 100.0F;  // /100.0F  >> forces floating point division
+  log_i("%s\n","BME280 Startwert für exponentielle Glättung erstellt");
 }
 
 
 // read BME280 values
 void BME280_scan() {
-  
-  BME_index = BME_index + 1 - (BME_index / 6) * 7;
 
   bme.takeForcedMeasurement();
-  BME_Temperature[BME_index] = bme.readTemperature();
-  BME_Humidity[BME_index]  = bme.readHumidity();
-  BME_Pressure [BME_index] = bme.readPressure() / 100.0F ;  // This forces floating point division
+  BME_Temp = BME_Temp + (bme.readTemperature() - BME_Temp) * 0.5;
+  BME_Hum = BME_Hum + (bme.readHumidity() - BME_Hum) * 0.5;
+  BME_Pres = BME_Pres + (bme.readPressure() / 100.0F  - BME_Pres) * 0.5;  // /100.0F  >> forces floating point division
 
 
   notifyClients(getOutputStates());
@@ -196,20 +196,6 @@ void MQTTsend () {
 
   String mqtt_tag = Hostname + "/STATUS";
   log_i("%s\n", mqtt_tag.c_str());
-  
-  BME_Temp = 0.0;
-  BME_Hum = 0.0;
-  BME_Pres = 0.0;
-
-  for (i = 0; i <= 6; i++) {
-    BME_Temp = BME_Temp + BME_Temperature[i];
-    BME_Hum = BME_Hum + BME_Humidity[i];
-    BME_Pres = BME_Pres + BME_Pressure [i];
-  }  
-
-  BME_Temp = BME_Temp / 7;
-  BME_Hum = BME_Hum / 7;
-  BME_Pres = BME_Pres / 7;
 
   mqtt_data["Time"] = My_time;
   mqtt_data["RSSI"] = WiFi.RSSI();
